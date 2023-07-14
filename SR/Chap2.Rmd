@@ -1,0 +1,453 @@
+---
+title: "Stat Rethinking - Cap 2"
+output: html_notebook
+---
+
+# Capítulo 2 - Gráficos y Cálculos
+
+Partiremos con un poco de gráficas (para soltar la mano) respecto a los cálculos de la sección 2.1.1. Counting possibilities
+
+```{r message=FALSE}
+library(tidyverse) # el preambulo con message = FALSE evita exceso de output al cargar tidyverse
+d <- # construímos las opciones para sacar bolitas en un 'tibble'
+  tibble(p1 = 0, # se llena automáticamente con respecto a los otros
+         p2 = rep(1:0, times = c(1, 3)), # repito 1:0, 1 vez el 1, 3 el cero
+         p3 = rep(1:0, times = c(2, 2)),
+         p4 = rep(1:0, times = c(3, 1)),
+         p5 = 1)
+head(d) # ver la cabecera de los datos (si no son muchos se ven todos)
+d %>% # "pipe" (ie mando de un lado a otro)
+  set_names(1:5) %>% 
+  mutate(x = 1:4) %>% 
+  pivot_longer(-x, names_to = "possibility") %>% 
+  mutate(value = value %>% as.character()) %>% 
+  
+  ggplot(aes(x = x, y = possibility, fill = value)) +
+  geom_point(shape = 21, size = 5) +
+  scale_fill_manual(values = c("white", "navy")) +
+  scale_x_discrete(NULL, breaks = NULL) +
+  theme(legend.position = "none")
+```
+
+Ahora tabulemos los casos posibles de cada tirada:
+
+```{r}
+library(flextable)
+
+tibble(draw    = 1:3,
+       marbles = 4) %>% 
+  mutate(possibilities = marbles ^ draw) %>% 
+  flextable()
+
+# y la estructura de datos de la fig 2.2 (las 64 config para una eleccion fija bwww)
+(
+  d <-
+  tibble(position = c((1:4^1) / 4^0, 
+                      (1:4^2) / 4^1, 
+                      (1:4^3) / 4^2),
+         draw     = rep(1:3, times = c(4^1, 4^2, 4^3)),
+         fill     = rep(c("b", "w"), times = c(1, 3)) %>% 
+           rep(., times = c(4^0 + 4^1 + 4^2)))
+) # los parentesis es para que tire output
+
+d %>% 
+  ggplot(aes(x = position, y = draw, fill = fill)) +
+  geom_point(shape = 21, size = 3) +
+  scale_fill_manual(values  = c("navy", "white")) +
+  scale_y_continuous(breaks = 1:3) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank())
+```
+
+Para conectar los tibbles (líneas), se agrega un poco más de código
+
+```{r}
+# these will connect the dots from the first and second draws
+(
+  lines_1 <-
+  tibble(x    = rep(1:4, each = 4),
+         xend = ((1:4^2) / 4),
+         y    = 1,
+         yend = 2)
+  )
+# these will connect the dots from the second and third draws
+(
+  lines_2 <-
+  tibble(x    = rep((1:4^2) / 4, each = 4),
+         xend = (1:4^3) / (4^2),
+         y    = 2,
+         yend = 3)
+  )
+
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               linewidth = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               linewidth = 1/3) +
+  geom_point(aes(fill = fill),
+             shape = 21, size = 3) +
+  scale_fill_manual(values  = c("navy", "white")) +
+  scale_y_continuous(breaks = 1:3) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank())
+```
+
+Ahora para centrarlos, copio simplemente lo descrito: We've generated the values for position (i.e., the x-axis), in such a way that they're all justified to the right, so to speak. But we'd like to center them. For draw == 1, we'll need to subtract 0.5 from each. For draw == 2, we need to reduce the scale by a factor of 4 and we'll then need to reduce the scale by another factor of 4 for draw == 3. The ifelse() function will be of use for that.
+
+```{r}
+d <-
+  d %>% 
+  mutate(denominator = ifelse(draw == 1, .5,
+                              ifelse(draw == 2, .5 / 4,
+                                     .5 / 4^2))) %>% 
+  mutate(position = position - denominator)
+
+d
+
+(
+  lines_1 <-
+  lines_1 %>% 
+  mutate(x    = x - 0.5,
+         xend = xend - 0.5 / 4^1)
+)
+
+(
+  lines_2 <-
+  lines_2 %>% 
+  mutate(x    = x - 0.5 / 4^1,
+         xend = xend - 0.5 / 4^2)
+)
+
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               linewidth = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               linewidth = 1/3) +
+  geom_point(aes(fill = fill),
+             shape = 21, size = 3) +
+  scale_fill_manual(values  = c("navy", "white")) +
+  scale_y_continuous(breaks = 1:3) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank())
+
+```
+
+Ahora se pasa a coordenadas polares
+
+```{r}
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               linewidth = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               linewidth = 1/3) +
+  geom_point(aes(fill = fill),
+             shape = 21, size = 4) +
+  scale_fill_manual(values = c("navy", "white")) +
+  scale_x_continuous(NULL, limits = c(0, 4), breaks = NULL) +
+  scale_y_continuous(NULL, limits = c(0.75, 3), breaks = NULL) +
+  coord_polar() +
+  theme(legend.position = "none",
+        panel.grid = element_blank())
+```
+
+Ahora para ensombrecer, se agrega un índice para declarar cuales caminos son válidos
+
+```{r}
+lines_1 <-
+  lines_1 %>% 
+  mutate(remain = c(rep(0:1, times = c(1, 3)),
+                    rep(0,   times = 4 * 3)))
+lines_2 <-
+  lines_2 %>% 
+  mutate(remain = c(rep(0,   times = 4),
+                    rep(1:0, times = c(1, 3)) %>% rep(., times = 3),
+                    rep(0,   times = 12 * 4)))
+d <-
+  d %>% 
+  mutate(remain = c(rep(1:0, times = c(1, 3)),
+                    rep(0:1, times = c(1, 3)),
+                    rep(0,   times = 4 * 4),
+                    rep(1:0, times = c(1, 3)) %>% rep(., times = 3),
+                    rep(0,   times = 12 * 4))) 
+# finally, the plot:
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend,
+                   alpha = remain %>% as.character()),
+               linewidth = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend,
+                   alpha = remain %>% as.character()),
+               linewidth = 1/3) +
+  geom_point(aes(fill = fill, alpha = remain %>% as.character()),
+             shape = 21, size = 4) +
+  # it's the alpha parameter that makes elements semitransparent
+  scale_fill_manual(values = c("navy", "white")) +
+  scale_alpha_manual(values = c(1/5, 1)) +
+  scale_x_continuous(NULL, limits = c(0, 4), breaks = NULL) +
+  scale_y_continuous(NULL, limits = c(0.75, 3), breaks = NULL) +
+  coord_polar() +
+  theme(legend.position = "none",
+        panel.grid = element_blank())
+
+```
+
+Construcción tabla pag 23
+
+```{r}
+# if we make two custom functions, here, 
+# it will simplify the `mutate()` code, below
+n_blue  <- function(x) rowSums(x == "b")
+n_white <- function(x) rowSums(x == "w")
+
+# make the data
+t <-
+  tibble(d1 = rep(c("w", "b"), times = c(1, 4)),
+         d2 = rep(c("w", "b"), times = c(2, 3)),
+         d3 = rep(c("w", "b"), times = c(3, 2)),
+         d4 = rep(c("w", "b"), times = c(4, 1))) %>% 
+  mutate(blue1 = n_blue(.),
+         white = n_white(.),
+         blue2 = n_blue(.)) %>% 
+  mutate(product = blue1 * white * blue2)
+
+# format the table
+t %>%
+  transmute(conjecture = str_c("[", d1, " ", d2, " ", d3, " ", d4, "]"),
+            `Ways to produce [w b w]` = str_c(blue1, " * ", white, " * ", blue2, " = ", product)) %>% 
+  flextable() %>% 
+  width(j = 1:2, width = c(1, 2)) %>% 
+  align(align = "center", part = "all")
+```
+
+Construcción figura 2.4, hay que agregar datos
+
+```{r}
+d <-
+  tibble(position = c((1:4^1) / 4^0, 
+                      (1:4^2) / 4^1, 
+                      (1:4^3) / 4^2),
+         draw     = rep(1:3, times = c(4^1, 4^2, 4^3)))
+
+(
+  d <-
+  d %>% 
+  bind_rows(
+    d, d
+  ) %>% 
+  # here are the fill colors
+  mutate(fill = c(rep(c("w", "b"), times = c(1, 3)) %>% rep(., times = c(4^0 + 4^1 + 4^2)),
+                  rep(c("w", "b"), each  = 2)       %>% rep(., times = c(4^0 + 4^1 + 4^2)),
+                  rep(c("w", "b"), times = c(3, 1)) %>% rep(., times = c(4^0 + 4^1 + 4^2)))) %>% 
+  # now we need to shift the positions over in accordance with draw, like before
+  mutate(denominator = ifelse(draw == 1, .5,
+                              ifelse(draw == 2, .5 / 4,
+                                     .5 / 4^2))) %>% 
+  mutate(position = position - denominator) %>% 
+  # here we'll add an index for which pie wedge we're working with
+  mutate(pie_index = rep(letters[1:3], each = n()/3)) %>% 
+  # to get the position axis correct for pie_index == "b" or "c", we'll need to offset
+  mutate(position = ifelse(pie_index == "a", position,
+                           ifelse(pie_index == "b", position + 4,
+                                  position + 4 * 2)))
+)
+
+# funcion auxiliar
+move_over <- function(position, index) {
+  ifelse(
+    index == "a", position,
+    ifelse(
+      index == "b", position + 4, position + 4 * 2
+    )
+  )
+}
+# uso de la funcion
+(
+  lines_1 <-
+  tibble(x    = rep(1:4, each = 4) %>% rep(., times = 3),
+         xend = ((1:4^2) / 4)      %>% rep(., times = 3),
+         y    = 1,
+         yend = 2) %>% 
+  mutate(x    = x - .5,
+         xend = xend - .5 / 4^1) %>% 
+  # here we'll add an index for which pie wedge we're working with
+  mutate(pie_index = rep(letters[1:3], each = n()/3)) %>% 
+  # to get the position axis correct for `pie_index == "b"` or `"c"`, we'll need to offset
+  mutate(x    = move_over(position = x,    index = pie_index),
+         xend = move_over(position = xend, index = pie_index))
+)
+(
+  lines_2 <-
+  tibble(x    = rep((1:4^2) / 4, each = 4) %>% rep(., times = 3),
+         xend = (1:4^3 / 4^2)              %>% rep(., times = 3),
+         y    = 2,
+         yend = 3) %>% 
+  mutate(x    = x - .5 / 4^1,
+         xend = xend - .5 / 4^2) %>% 
+  # here we'll add an index for which pie wedge we're working with
+  mutate(pie_index = rep(letters[1:3], each = n()/3)) %>% 
+  # to get the position axis correct for `pie_index == "b"` or `"c"`, we'll need to offset
+  mutate(x    = move_over(position = x,    index = pie_index),
+         xend = move_over(position = xend, index = pie_index))
+)
+
+# definir caminos validos
+d <- 
+  d %>% 
+  mutate(remain = c(# pie_index == "a"
+                    rep(0:1, times = c(1, 3)),
+                    rep(0,   times = 4),
+                    rep(1:0, times = c(1, 3)) %>% rep(., times = 3),
+                    rep(0,   times = 4 * 4),
+                    rep(c(0, 1, 0), times = c(1, 3, 4 * 3)) %>% rep(., times = 3),
+                    # pie_index == "b"
+                    rep(0:1, each = 2),
+                    rep(0,   times = 4 * 2),
+                    rep(1:0, each = 2) %>% rep(., times = 2),
+                    rep(0,   times = 4 * 4 * 2),
+                    rep(c(0, 1, 0, 1, 0), times = c(2, 2, 2, 2, 8)) %>% rep(., times = 2),
+                    # pie_index == "c",
+                    rep(0:1, times = c(3, 1)),
+                    rep(0,   times = 4 * 3),
+                    rep(1:0, times = c(3, 1)), 
+                    rep(0,   times = 4 * 4 * 3),
+                    rep(0:1, times = c(3, 1)) %>% rep(., times = 3),
+                    rep(0,   times = 4)
+                    )
+         )
+
+lines_1 <-
+  lines_1 %>% 
+  mutate(remain = c(rep(0,   times = 4),
+                    rep(1:0, times = c(1, 3)) %>% rep(., times = 3),
+                    rep(0,   times = 4 * 2),
+                    rep(1:0, each  = 2) %>% rep(., times = 2),
+                    rep(0,   times = 4 * 3),
+                    rep(1:0, times = c(3, 1))
+                    )
+         )
+
+lines_2 <-
+  lines_2 %>% 
+  mutate(remain = c(rep(0,   times = 4 * 4),
+                    rep(c(0, 1, 0), times = c(1, 3, 4 * 3)) %>% rep(., times = 3),
+                    rep(0,   times = 4 * 8),
+                    rep(c(0, 1, 0, 1, 0), times = c(2, 2, 2, 2, 8)) %>% rep(., times = 2),
+                    rep(0,   times = 4 * 4 * 3),
+                    rep(0:1, times = c(3, 1)) %>% rep(., times = 3),
+                    rep(0,   times = 4)
+                    )
+         )
+# voila
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_vline(xintercept = c(0, 4, 8), color = "white", linewidth = 2/3) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend,
+                   alpha = remain %>% as.character()),
+               linewidth = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend,
+                   alpha = remain %>% as.character()),
+               linewidth = 1/3) +
+  geom_point(aes(fill = fill, size = draw, alpha = remain %>% as.character()),
+             shape = 21) +
+  scale_fill_manual(values = c("navy", "white")) +
+  scale_size_continuous(range = c(3, 1.5)) +
+  scale_alpha_manual(values = c(0.2, 1)) +
+  scale_x_continuous(NULL, limits = c(0, 12), breaks = NULL) +
+  scale_y_continuous(NULL, limits = c(0.75, 3.5), breaks = NULL) +
+  coord_polar() +
+  theme(legend.position = "none",
+        panel.grid = element_blank())
+```
+
+### Sec 2.1.2 Combinando otra info
+Primero introduzcamos la tabla para el nuevo conteo
+```{r}
+# update t
+t <-
+  t %>% 
+  mutate(nc = blue1 * product)
+
+# format the table
+t %>%
+  transmute(Conjecture            = str_c("[", d1, " ", d2, " ", d3, " ", d4, "]"),
+            `Ways to produce [b]` = blue1,
+            `Prior counts`        = product,
+            `New count`           = str_c(blue1, " * ", product, " = ", nc)) %>% 
+  flextable() %>% 
+  width(width = c(1, 1, 0.8, 1)) %>% 
+  align(align = "center", part = "all") %>% 
+  align(j = 4, align = "left", part = "all") %>% 
+  valign(valign = "bottom", part = "header")
+```
+Update con los nuevos datos (fabrica)
+```{r}
+# update t
+t <-
+  t %>% 
+  rename(pc = nc) %>% 
+  mutate(fc = c(0, 3:0)) %>% 
+  mutate(nc = pc * fc) 
+
+# format the table
+t %>% 
+  transmute(Conjecture      = str_c("[", d1, " ", d2, " ", d3, " ", d4, "]"),
+            `Prior count`   = pc,
+            `Factory count` = fc,
+            `New count`     = str_c(pc, " * ", fc, " = ", nc)) %>% 
+  flextable() %>% 
+  width(width = c(1, 1, 0.8, 1)) %>% 
+  align(align = "center", part = "all") %>% 
+  align(j = 4, align = "left", part = "all") %>% 
+  valign(valign = "bottom", part = "header")
+
+```
+
+Y finalmente (para esta parte) introduciendo el concepto de Plausabilidad y su tabla respectiva
+```{r}
+# update t
+t %>% 
+  rename(ways = product) %>% 
+  mutate(p = blue1 / 4) %>% 
+  mutate(pl = ways / sum(ways)) %>% 
+  transmute(`Possible composition` = str_c("[", d1, " ", d2, " ", d3, " ", d4, "]"),
+            p                      = p,
+            `Ways to produce data` = ways,
+            `Plausibility`         = pl) %>% 
+  
+  # format for the table
+  flextable() %>% 
+  width(width = c(1.8, 1, 1.2, 1)) %>% 
+  align(align = "center", part = "all") %>% 
+  valign(valign = "bottom", part = "header") %>% 
+  italic(j = 2, part = "header")
+```
+el autor muestra que el cálculo fue:
+```{r}
+ways <- c(0, 3, 8, 9, 0)
+
+ways / sum(ways)
+```
+
